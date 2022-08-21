@@ -5,6 +5,8 @@
 int DISPLAY_WIDTH = 1280;
 int DISPLAY_HEIGHT = 720;
 int DISPLAY_SCALE = 1;
+int retries = 0;
+int difficulty = 150;
 
 enum Agent8State {
 	State_Appear = 0,
@@ -68,6 +70,7 @@ bool MainGameUpdate( float elapsedTime )
 
 	Play::DrawFontText("64px", "Arrow Keys to move, Space to fire.", { DISPLAY_WIDTH / 2,DISPLAY_HEIGHT - 30 }, Play::CENTRE);
 	Play::DrawFontText("132px", "Score: " + std::to_string(gameState.score), { DISPLAY_WIDTH / 2,50 }, Play::CENTRE);
+	Play::DrawFontText("132px", "Retries: " + std::to_string(retries), { 3 * DISPLAY_WIDTH / 4,50 }, Play::CENTRE);
 	//VOID UPDATEAGENT8 MISSING
 
 	Play::PresentDrawingBuffer();
@@ -88,11 +91,45 @@ void UpdateAgent8() {
 			
 			}
 			break;
-		case State_Halt:
 
+		case State_Halt:
+			obj_agent8.velocity *= 0.9f;
+			if (Play::IsAnimationComplete(obj_agent8)) {
+				gameState.agentState = State_Play;
+			}
+			break;
+
+		case State_Play:
+			HandlePlayerControls();
+			break;
+
+		case State_Dead: //restart, maybe add a counter
+			obj_agent8.acceleration = { -0.3f,0.5f };
+			obj_agent8.rotation += 0.25f;
+			if (Play::KeyPressed(VK_SPACE)) {
+				gameState.agentState = State_Appear;
+				obj_agent8.pos = { 115,0 };
+				obj_agent8.velocity = { 0,0 };
+				obj_agent8.frame = 0;
+				Play::StartAudioLoop("music");
+				gameState.score = 0;
+				retries += 1;
+
+				for (int objId : Play::CollectGameObjectIDsByType(Type_Tool)) {
+					Play::GetGameObject(objId).type = Type_Destroyed;
+				}
+			}
+			break;
+
+	}
+	Play::UpdateGameObject(obj_agent8);
+	if (Play::IsLeavingDisplayArea(obj_agent8) && gameState.agentState != State_Dead) {
+		obj_agent8.pos = obj_agent8.oldPos;
 
 	}
 
+	Play::DrawLine({ obj_agent8.pos.x,0 }, obj_agent8.pos, Play::cWhite);
+	Play::DrawObjectRotated(obj_agent8);
 
 
 
@@ -102,27 +139,27 @@ void UpdateAgent8() {
 
 void UpdateFan() {
 	GameObject& obj_fan = Play::GetGameObjectByType(Type_Fan);
-	if (Play::RandomRoll(50) == 50) {
+	if (Play::RandomRoll(difficulty) == 1 && gameState.agentState != State_Dead) {
 		int id = Play::CreateGameObject(Type_Tool, obj_fan.pos, 50, "driver");
 		GameObject& obj_tool = Play::GetGameObject(id);
 		obj_tool.velocity = Point2f(-8, Play::RandomRollRange(-1, 1) * 6);
-
+		if (difficulty > 30) {
+			difficulty -= 1;
+		}
 		if (Play::RandomRoll(2) == 1) {
 			Play::SetSprite(obj_tool, "spanner", 0);
 			obj_tool.radius = 100;
-			obj_tool.velocity.x = -4; //maybe make this a variable to change with difficulty
+			obj_tool.velocity.x = -4 - ((100 - difficulty)/35); //speed of tools scales with difficulty capped at a fastest limit
 			obj_tool.rotSpeed = 0.1f;
 		}
 		Play::PlayAudio("tool");
-	
-
 
 	}
 
-	if (Play::RandomRoll(150) == 50) {
+	if (Play::RandomRoll(150) == 50) { //makes coins
 		int id = Play::CreateGameObject(Type_Coin, obj_fan.pos, 40, "coin");
 		GameObject& obj_coin = Play::GetGameObject(id);
-		obj_coin.velocity = {-3,0};
+		obj_coin.velocity = {-5,0};
 		obj_coin.rotSpeed = 0.1f;
 		
 
@@ -149,9 +186,10 @@ void UpdateTools() {
 	for (int id : vTools) {
 		GameObject& obj_tool = Play::GetGameObject(id);
 
-		if (Play::IsColliding(obj_tool, obj_agent8)){
+		if (gameState.agentState!=State_Dead && Play::IsColliding(obj_tool, obj_agent8)){
 			Play::StopAudioLoop("music");
 			Play::PlayAudio("die");
+			gameState.agentState = State_Dead;
 			obj_agent8.pos = { -100, -100 };
 
 		}
@@ -297,7 +335,7 @@ void HandlePlayerControls()
 
 	}
 	else if (Play::KeyDown(VK_DOWN)) {
-		obj_agent8.acceleration = { 0,1 };
+		obj_agent8.acceleration = { 0,0.5f };
 		Play::SetSprite(obj_agent8, "agent8_fall", 0);
 
 	}
